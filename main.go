@@ -9,7 +9,6 @@ import (
 	"github.com/nlopes/slack"
 )
 
-
 func run() error {
 	token := os.Getenv("SLACK_TOKEN")
 	if token == "" {
