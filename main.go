@@ -2,25 +2,21 @@ package main
 
 import (
 	"errors"
-	"fmt"
-	"github.com/prometheus/common/log"
+	log "github.com/sirupsen/logrus"
+	"net/http"
 	"os"
-
-	"github.com/nlopes/slack"
 )
 
 func run() error {
-	token := os.Getenv("SLACK_TOKEN")
-	if token == "" {
-		return errors.New("please set SLACK_TOKEN env var")
+	signingSecret := os.Getenv("SLACK_SIGNING_SECRET")
+	if signingSecret == "" {
+		return errors.New("please set SLACK_SIGNING_SECRET env var")
 	}
 
-	api := slack.New(token)
-	if _, err := api.AuthTest(); err != nil {
-		return fmt.Errorf("token is not valid: %w", err)
-	}
+	http.HandleFunc("/slack", newSlashCommandHandler(signingSecret))
 
-	return nil
+	log.Info("Server listening")
+	return http.ListenAndServe(":8080", nil)
 }
 
 func main() {
