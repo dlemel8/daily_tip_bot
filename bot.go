@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strings"
 )
 
 func newSlashCommandHandler(signingSecret string) func(http.ResponseWriter, *http.Request) {
@@ -30,16 +31,22 @@ func newSlashCommandHandler(signingSecret string) func(http.ResponseWriter, *htt
 		}
 
 		switch slashCommand.Command {
+		case "/list-topics":
+			writeResponse(w, fmt.Sprintf("Avaliable topics are %v", strings.Join(listTopics(), ", ")))
+
 		case "/get-tip":
 			params := &slack.Msg{Text: slashCommand.Text}
-			response := fmt.Sprintf("You asked for a tip from source %v", params.Text)
-			if _, err := w.Write([]byte(response)); err != nil {
-				log.Warn("fail to write response")
-			}
+			writeResponse(w, fmt.Sprintf("Your tip is: %s", getTip(params.Text)))
 
 		default:
 			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
+	}
+}
+
+func writeResponse(w http.ResponseWriter, response string) {
+	if _, err := w.Write([]byte(response)); err != nil {
+		log.Warn("fail to write response")
 	}
 }
