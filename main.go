@@ -14,10 +14,11 @@ var (
 		Use: "daily_tip_bot",
 	}
 	webServiceCmd = &cobra.Command{
-		Use: "web_service",
+		Use:   "web_server",
+		Short: "listen and serve Slack slash commands. among other things, store scheduled tips",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			signingSecret := viper.GetString("slack_signing_secret")
-			http.HandleFunc("/slack", newSlashCommandHandler(signingSecret))
+			http.HandleFunc("/slack", newSlashCommandHandler(signingSecret, &scheduledTipsStorage{}))
 
 			log.Info("Server listening")
 			port := viper.GetInt("port")
@@ -25,11 +26,11 @@ var (
 		},
 	}
 	scheduledTipsCmd = &cobra.Command{
-		Use: "scheduled_tips",
+		Use:   "scheduled_tips_sender",
+		Short: "load stored scheduled tips and send them if needed",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			botToken := viper.GetString("slack_bot_token")
-			fmt.Printf("bot token len is %d\n", len(botToken))
-			return nil
+			return sendScheduledTips(botToken, &scheduledTipsStorage{})
 		},
 	}
 )

@@ -7,10 +7,18 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 )
 
-func newSlashCommandHandler(signingSecret string) func(http.ResponseWriter, *http.Request) {
+const (
+	listTopicCommand   = "/list-topics"
+	getTipCommand      = "/get-tip"
+	scheduleTipCommand = "/schedule-tip"
+)
+
+func newSlashCommandHandler(signingSecret string, storage *scheduledTipsStorage) func(http.ResponseWriter, *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		verifier, err := slack.NewSecretsVerifier(r.Header, signingSecret)
 		if err != nil {
@@ -31,18 +39,61 @@ func newSlashCommandHandler(signingSecret string) func(http.ResponseWriter, *htt
 		}
 
 		switch slashCommand.Command {
-		case "/list-topics":
+		case listTopicCommand:
 			writeResponse(w, fmt.Sprintf("Avaliable topics are %v", strings.Join(listTopics(), ", ")))
 
-		case "/get-tip":
-			params := &slack.Msg{Text: slashCommand.Text}
-			writeResponse(w, fmt.Sprintf("Your tip is: %s", getTip(params.Text)))
+		case getTipCommand:
+			writeResponse(w, fmt.Sprintf("Your tip is: %s", getTip(slashCommand.Text)))
+
+		case scheduleTipCommand:
+			params := strings.Split(slashCommand.Text, " ")
+			if len(params) != 2 {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			hourStr, topic := params[0], params[1]
+			hour, err := strconv.Atoi(hourStr)
+			if err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+
+			if err := storage.store(hour, slashCommand.ChannelID, topic); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			writeResponse(w, fmt.Sprintf("Schedule a new tip from topic %s on hour %d ", topic, hour))
 
 		default:
-			w.WriteHeader(http.StatusInternalServerError)
+			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
 	}
+}
+
+func sendScheduledTips(botToken string, storage *scheduledTipsStorage) error {
+	api := slack.New(botToken)
+	hour, _, _ := time.Now().Clock()
+
+	scheduledTip, err := storage.load(hour)
+	if err != nil {
+		return err
+	}
+	if scheduledTip.Hour != hour {
+		return nil
+	}
+
+	message := fmt.Sprintf("Your %s daily tip is: %s", scheduledTip.Topic, getTip(scheduledTip.Topic))
+	if _, timestamp, err := api.PostMessage(
+		scheduledTip.ChannelId,
+		slack.MsgOptionText(message, false)); err != nil {
+		return err
+	} else {
+		log.Info("Message successfully sent to at %s", timestamp)
+	}
+
+	return nil
 }
 
 func writeResponse(w http.ResponseWriter, response string) {
