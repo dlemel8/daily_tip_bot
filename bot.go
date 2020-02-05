@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	listTopicCommand   = "/list-topics"
+	listTopicsCommand  = "/list-topics"
 	getTipCommand      = "/get-tip"
 	scheduleTipCommand = "/schedule-tip"
 )
@@ -39,7 +39,7 @@ func newSlashCommandHandler(signingSecret string, storage *scheduledTipsStorage)
 		}
 
 		switch slashCommand.Command {
-		case listTopicCommand:
+		case listTopicsCommand:
 			writeResponse(w, fmt.Sprintf("Avaliable topics are %v", strings.Join(listTopics(), ", ")))
 
 		case getTipCommand:
@@ -60,7 +60,8 @@ func newSlashCommandHandler(signingSecret string, storage *scheduledTipsStorage)
 				return
 			}
 
-			if err := storage.store(hour, slashCommand.ChannelID, topic); err != nil {
+			scheduledTip := &ScheduledTip{ChannelId: slashCommand.ChannelID, Topic: topic, Hour: hour}
+			if err := storage.store(scheduledTip); err != nil {
 				log.Error(err)
 				w.WriteHeader(http.StatusInternalServerError)
 				return
@@ -78,28 +79,48 @@ func sendScheduledTips(botToken string, storage *scheduledTipsStorage) error {
 	api := slack.New(botToken)
 	hour, _, _ := time.Now().Clock()
 
-	scheduledTips, err := storage.load(hour)
+	scheduledTips, err := storage.loadByHour(hour)
 	if err != nil {
 		return err
 	}
 
 	log.Infof("found %d relevant scheduled tips", len(scheduledTips))
+	lastHour := time.Now().Truncate(time.Hour)
+	sent := 0
 
 	for _, scheduledTip := range scheduledTips {
 		if scheduledTip.Hour != hour {
 			continue
 		}
 
+		if scheduledTip.LastSent.After(lastHour) {
+			continue
+		}
+
 		message := fmt.Sprintf("Your %s daily tip is: %s", scheduledTip.Topic, getTip(scheduledTip.Topic))
-		if _, timestamp, err := api.PostMessage(
-			scheduledTip.ChannelId,
-			slack.MsgOptionText(message, false)); err != nil {
-			return err
-		} else {
-			log.Info("Message successfully sent to at %s", timestamp)
+		_, timestampStr, err := api.PostMessage(scheduledTip.ChannelId, slack.MsgOptionText(message, false))
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+		sent += 1
+
+		timestampInt, err := strconv.ParseFloat(timestampStr, 64)
+		if err != nil {
+			log.Error(err)
+			continue
+		}
+
+		scheduledTip.LastSent = time.Unix(int64(timestampInt), 0)
+		log.Infof("Message successfully sent at %s", scheduledTip.LastSent)
+		err = storage.store(&scheduledTip)
+		if err != nil {
+			log.Error(err)
+			continue
 		}
 	}
 
+	log.Infof("sent %d scheduled tips", sent)
 	return nil
 }
 

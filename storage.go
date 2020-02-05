@@ -4,12 +4,14 @@ import (
 	"errors"
 	"github.com/go-pg/pg"
 	"github.com/go-pg/pg/orm"
+	"time"
 )
 
 type ScheduledTip struct {
-	Hour      int    `sql:"unique:hour_channel_id"`
-	ChannelId string `sql:"unique:hour_channel_id"`
-	Topic     string
+	ChannelId string `sql:"unique:channel_topic"`
+	Topic     string `sql:"unique:channel_topic"`
+	Hour      int
+	LastSent  time.Time
 }
 
 type scheduledTipsStorage struct {
@@ -34,22 +36,21 @@ func (storage *scheduledTipsStorage) close() error {
 	return storage.db.Close()
 }
 
-func (storage *scheduledTipsStorage) store(hour int, channelId string, topic string) error {
-	if !isHourValid(hour) {
+func (storage *scheduledTipsStorage) store(scheduledTip *ScheduledTip) error {
+	if !isHourValid(scheduledTip.Hour) {
 		return errors.New("invalid hour")
 	}
 
-	newScheduledTip := &ScheduledTip{Hour: hour, ChannelId: channelId, Topic: topic}
 	_, err := storage.db.
-		Model(newScheduledTip).
-		OnConflict("(hour,channel_id) DO UPDATE").
-		Set("topic = EXCLUDED.topic").
+		Model(scheduledTip).
+		OnConflict("(channel_id,topic) DO UPDATE").
+		Set("hour = EXCLUDED.hour, last_sent = EXCLUDED.last_sent").
 		Insert()
 
 	return err
 }
 
-func (storage *scheduledTipsStorage) load(hour int) ([]ScheduledTip, error) {
+func (storage *scheduledTipsStorage) loadByHour(hour int) ([]ScheduledTip, error) {
 	if !isHourValid(hour) {
 		return nil, errors.New("invalid hour")
 	}
