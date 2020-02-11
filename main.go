@@ -23,8 +23,11 @@ var (
 			}
 			defer scheduledTipsStorage.close()
 
+			botToken := viper.GetString("slack_bot_token")
+			bot := newBot(botToken, scheduledTipsStorage)
+
 			signingSecret := viper.GetString("slack_signing_secret")
-			http.HandleFunc("/slack", newSlashCommandHandler(signingSecret, scheduledTipsStorage))
+			http.HandleFunc("/slack", bot.newSlashCommandHandler(signingSecret))
 
 			log.Info("Server listening")
 			port := viper.GetInt("port")
@@ -42,7 +45,8 @@ var (
 			defer scheduledTipsStorage.close()
 
 			botToken := viper.GetString("slack_bot_token")
-			return sendScheduledTips(botToken, scheduledTipsStorage)
+			bot := newBot(botToken, scheduledTipsStorage)
+			return bot.sendScheduledTips()
 		},
 	}
 )
